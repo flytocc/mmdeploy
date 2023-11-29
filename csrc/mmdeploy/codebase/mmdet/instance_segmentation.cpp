@@ -53,7 +53,8 @@ class ResizeInstanceMask : public ResizeBBox {
         return Status(eNotSupported);
       }
 
-      if (!(masks.shape().size() == 4 && masks.data_type() == DataType::kFLOAT)) {
+      if (!(masks.shape().size() == 4 && (
+        masks.data_type() == DataType::kFLOAT || masks.data_type() == DataType::kINT8))) {
         MMDEPLOY_ERROR("unsupported `mask` tensor, shape: {}, dtype: {}", masks.shape(),
                        (int)masks.data_type());
         return Status(eNotSupported);
@@ -134,6 +135,41 @@ class ResizeInstanceMask : public ResizeBBox {
         }
       }
 
+    } else if (d_mask.data_type() == DataType::kINT8) {  // rtdetr-inst
+      auto mask_height = (int)d_mask.shape(1);
+      auto mask_width = (int)d_mask.shape(2);
+      cv::Mat mask_all = cv::Mat::zeros(mask_height, mask_width, CV_8UC1);
+      Tensor cpu_mask;
+      for (auto& det : result) {
+        auto mask = d_mask.Slice(det.index);
+        mask.Reshape({1, mask_height, mask_width, 1});
+        OUTCOME_TRY(CopyToHost(mask, cpu_mask));
+        OUTCOME_TRY(stream_.Wait());
+        cv::Mat mask_mat = cpu::Tensor2CVMat(cpu_mask);
+        if ((int)result.size() < 256) {
+          mask_all += mask_mat;
+        } else {
+          cv::bitwise_or(mask_mat, mask_all, mask_all);
+        }
+      }
+      is_resize_mask_ = false;
+      if (is_resize_mask_) {
+        int resize_height = int(mask_height / scale_factor_[1] + 0.5);
+        int resize_width = int(mask_width / scale_factor_[0] + 0.5);
+        // skip resize if scale_factor is 1.0
+        if (resize_height != mask_height || resize_width != mask_width) {
+          cv::resize(mask_all, mask_all, cv::Size(resize_width, resize_height), cv::INTER_NEAREST);
+        }
+        // crop masks
+        if (resize_height != img_h || resize_width != img_w) {
+          mask_all = mask_all(cv::Range(0, img_h), cv::Range(0, img_w)).clone();
+        }
+      }
+      mask_all = mask_all > 0;
+      result[0].mask = Mat(mask_all.rows, mask_all.cols, PixelFormat::kGRAYSCALE, DataType::kINT8,
+                           std::shared_ptr<void>(mask_all.data, [mat = mask_all](void*) {}));
+      return success();
+
     } else {  // rtmdet-inst
       auto mask_channel = (int)d_mask.shape(0);
       auto mask_height = (int)d_mask.shape(1);
@@ -145,8 +181,8 @@ class ResizeInstanceMask : public ResizeBBox {
       OUTCOME_TRY(auto cpu_mask, MakeAvailableOnDevice(d_mask, host, stream_));
       OUTCOME_TRY(stream().Wait());
       cv::Mat mask_mat(mask_height, mask_width, CV_32FC(mask_channel), cpu_mask.data());
-      int resize_height = int(mask_height / scale_factor_[0] + 0.5);
-      int resize_width = int(mask_width / scale_factor_[1] + 0.5);
+      int resize_height = int(mask_height / scale_factor_[1] + 0.5);
+      int resize_width = int(mask_width / scale_factor_[0] + 0.5);
       // skip resize if scale_factor is 1.0
       if (resize_height != mask_height || resize_width != mask_width) {
         cv::resize(mask_mat, mask_mat, cv::Size(resize_width, resize_height), cv::INTER_LINEAR);
@@ -156,7 +192,7 @@ class ResizeInstanceMask : public ResizeBBox {
 
       for (int i = 0; i < (int)result.size(); i++) {
         cv::Mat mask_;
-        cv::extractChannel(mask_mat, mask_, i);
+        cv::extractChannel(mask_mat, mask_, result[i].index);
         Tensor mask_t = cpu::CVMat2Tensor(mask_);
         h_warped_masks.emplace_back(mask_t);
       }

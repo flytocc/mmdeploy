@@ -13,7 +13,7 @@ mmdeploy_onnx2ncnn
 
 # Distribution / packaging
 .Python
-build/
+build*
 develop-eggs/
 dist/
 downloads/
