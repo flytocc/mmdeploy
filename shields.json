@@ -1,1 +1,1 @@
-{"build_cpu_model_convert":{"label":"build","status":"failing","color":"red"},"cross_build_aarch64":{"label":"build","status":"passing","color":"green"}}
+{"build_cpu_model_convert":{"label":"build","status":"failing","color":"red"},"cross_build_aarch64":{"label":"build","status":"passing","color":"green"},"build_cuda117":{"label":"build","status":"failing","color":"red"}}
