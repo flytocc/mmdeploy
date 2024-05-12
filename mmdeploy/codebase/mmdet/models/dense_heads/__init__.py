@@ -8,6 +8,7 @@ from . import gfl_head  # noqa: F401,F403
 from . import reppoints_head  # noqa: F401,F403
 from . import rpn_head  # noqa: F401,F403
 from . import rtdetr_head  # noqa: F401,F403
+from . import rtdetr_ins_head  # noqa: F401,F403
 from . import rtmdet_head  # noqa: F401,F403
 from . import rtmdet_ins_head  # noqa: F401,F403
 from . import solo_head  # noqa: F401,F403
