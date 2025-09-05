@@ -5,7 +5,9 @@ import torch
 from torch import Tensor
 from torch.nn import functional as F
 
+from mmdeploy.codebase.mmdet.deploy import get_post_processing_params
 from mmdeploy.core import FUNCTION_REWRITER
+from mmdeploy.mmcv.ops import multiclass_nms
 
 
 @FUNCTION_REWRITER.register_rewriter(
@@ -59,6 +61,28 @@ def detrhead__predict_by_feat__default(self,
     det_bboxes.clamp_(min=0., max=1.)
     shape_scale = img_shape.flip(1).repeat(1, 2).unsqueeze(1)
     det_bboxes = det_bboxes * shape_scale
-    det_bboxes = torch.cat((det_bboxes, scores.unsqueeze(-1)), -1)
+    scores = scores.unsqueeze(-1)
 
-    return det_bboxes, det_labels
+    if 'nms' not in self.test_cfg:
+        det_bboxes = torch.cat((det_bboxes, scores), -1)
+        return det_bboxes, det_labels
+
+    cfg = self.test_cfg
+    ctx = FUNCTION_REWRITER.get_context()
+    deploy_cfg = ctx.cfg
+    post_params = get_post_processing_params(deploy_cfg)
+    iou_threshold = cfg.nms.get('iou_threshold', post_params.iou_threshold)
+    score_threshold = cfg.get('score_thr', post_params.score_threshold)
+    pre_top_k = post_params.pre_top_k
+    keep_top_k = cfg.get('max_per_img', post_params.keep_top_k)
+    max_output_boxes_per_class = post_params.max_output_boxes_per_class
+    nms_type = cfg.nms.get('type')
+    return multiclass_nms(
+        det_bboxes,
+        scores,
+        max_output_boxes_per_class,
+        nms_type=nms_type,
+        iou_threshold=iou_threshold,
+        score_threshold=score_threshold,
+        pre_top_k=pre_top_k,
+        keep_top_k=keep_top_k)
