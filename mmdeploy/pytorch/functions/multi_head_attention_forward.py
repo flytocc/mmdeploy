@@ -77,5 +77,5 @@ def scaled_dot_product_attention__default(query,
     if attn_mask is not None:
         attn_weight += attn_mask
     attn_weight = torch.softmax(attn_weight, dim=-1)
-    attn_weight = torch.dropout(attn_weight, dropout_p, True)
+    attn_weight = torch.dropout(attn_weight, dropout_p, False)
     return attn_weight @ value
