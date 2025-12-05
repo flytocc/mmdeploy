@@ -182,6 +182,7 @@ class LibVersionChecker(Checker):
                 valid = False
         return valid
 
+_print_once = set()
 
 class RewriterRegistry:
     """A registry that records rewrite objects.
@@ -322,9 +323,16 @@ class RewriterRegistry:
         backend = Backend.get(backend)
 
         def decorator(object):
+            import functools
+            @functools.wraps(object)
+            def wrapped_object(*args, **kwargs):
+                if (name, backend, ir) not in _print_once:
+                    _print_once.add((name, backend, ir))
+                    print(f"[Rewriter] CALL: '{name}' (backend={backend}, ir={ir})")
+                return object(*args, **kwargs)
             self._register(
-                name, backend, ir, extra_checkers, _object=object, **kwargs)
-            return object
+                name, backend, ir, extra_checkers, _object=wrapped_object, **kwargs)
+            return wrapped_object
 
         return decorator
 

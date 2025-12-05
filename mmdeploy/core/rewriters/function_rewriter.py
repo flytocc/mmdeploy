@@ -287,5 +287,6 @@ class FunctionRewriter:
                 ctx = tmp_ctx
 
         if ctx is None:
+            ctx = ctxs[-1]
             get_root_logger().warning(f'Can not found context of {key}')
         return ctx
