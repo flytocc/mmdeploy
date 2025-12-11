@@ -258,16 +258,18 @@ class End2EndModel(BaseBackendModel):
                         masks = masks[:, :img_h, :img_w]
                 # avoid to resize masks with zero dim
                 if export_postprocess_mask and rescale and masks.shape[0] != 0:
-                    masks = torch.nn.functional.interpolate(
-                        masks.unsqueeze(0),
-                        size=[
-                            math.ceil(masks.shape[-2] /
-                                      img_metas[i]['scale_factor'][1]),
-                            math.ceil(masks.shape[-1] /
-                                      img_metas[i]['scale_factor'][0])
-                        ])[..., :ori_h, :ori_w]
-                    masks = masks.squeeze(0)
-                if masks.dtype != bool:
+                    new_h = math.ceil(
+                        masks.shape[-2] / img_metas[i]['scale_factor'][1])
+                    new_w = math.ceil(
+                        masks.shape[-1] / img_metas[i]['scale_factor'][0])
+                    if masks.shape[-2] != new_h or masks.shape[-1] != new_w:
+                        if masks.dtype in (bool, torch.bool):
+                            masks = masks.float()
+                        masks = torch.nn.functional.interpolate(
+                            masks.unsqueeze(0),
+                            size=[new_h, new_w])[..., :ori_h, :ori_w]
+                        masks = masks.squeeze(0)
+                if masks.dtype not in (bool, torch.bool):
                     masks = masks >= 0.5
                 # aligned with mmdet to easily convert to numpy
                 masks = masks.to(device)
