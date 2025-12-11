@@ -156,7 +156,8 @@ class ResizeInstanceMask : public ResizeBBox {
 
       for (int i = 0; i < (int)result.size(); i++) {
         cv::Mat mask_;
-        cv::extractChannel(mask_mat, mask_, i);
+        // result is filtered by score thresh, size is less than mask_channel, index is not continuous
+        cv::extractChannel(mask_mat, mask_, result[i].index);
         Tensor mask_t = cpu::CVMat2Tensor(mask_);
         h_warped_masks.emplace_back(mask_t);
       }
