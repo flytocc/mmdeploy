@@ -76,7 +76,7 @@ def rtdetrinshead__predict_by_feat__default(self,
             size=img_shape.squeeze(0).tolist(),
             mode='bilinear',
             align_corners=False)
-        masks = masks.sigmoid() > mask_thr_binary
+        masks = masks.sigmoid()
         return det_bboxes, det_labels, masks
 
     cfg = self.test_cfg
@@ -108,5 +108,5 @@ def rtdetrinshead__predict_by_feat__default(self,
         size=img_shape.squeeze(0).tolist(),
         mode='bilinear',
         align_corners=False)
-    masks = masks.sigmoid() > mask_thr_binary
+    masks = masks.sigmoid()
     return det_bboxes, det_labels, masks
