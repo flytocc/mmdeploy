@@ -75,8 +75,8 @@ RUN git clone --recursive -b $MMDEPLOY_VERSION --depth 1 $MMDEPLOY_REPO &&\
         -Dpplcv_DIR=${pplcv_DIR} \
         -DTENSORRT_DIR=${TENSORRT_DIR}
 
-ENV TORCH_CUDA_ARCH_LIST="8.6 8.9 9.0+PTX"
 RUN python3 -m pip install --no-cache-dir ninja psutil pycuda onnxsim onnxruntime
+ENV TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 9.0+PTX"
 RUN python3 -m pip install --no-cache-dir "mmcv>=2.0.0"
 RUN cd mmdeploy &&\
     python3 -m pip install --no-cache-dir -r requirements.txt &&\
