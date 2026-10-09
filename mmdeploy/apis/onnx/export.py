@@ -1,4 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import inspect
 from copy import deepcopy
 from functools import partial
 from typing import Any, Dict, Optional, Sequence, Tuple, Union
@@ -135,10 +136,7 @@ def export(model: torch.nn.Module,
             args = tuple([_.cpu() for _ in args])
         else:
             raise RuntimeError(f'Not supported args: {args}')
-        torch.onnx.export(
-            patched_model,
-            args,
-            output_path,
+        export_kwargs = dict(
             export_params=True,
             input_names=input_names,
             output_names=output_names,
@@ -146,6 +144,9 @@ def export(model: torch.nn.Module,
             dynamic_axes=dynamic_axes,
             keep_initializers_as_inputs=keep_initializers_as_inputs,
             verbose=verbose)
+        if 'dynamo' in inspect.signature(torch.onnx.export).parameters:
+            export_kwargs['dynamo'] = False
+        torch.onnx.export(patched_model, args, output_path, **export_kwargs)
 
         if input_metas is not None:
             patched_model.forward = model_forward
