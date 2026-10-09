@@ -1,6 +1,9 @@
 // Copyright (c) OpenMMLab. All rights reserved.
 #ifndef TRT_PLUGIN_BASE_HPP
 #define TRT_PLUGIN_BASE_HPP
+
+#include <limits>
+
 #include "NvInferRuntime.h"
 #include "NvInferVersion.h"
 #include "trt_plugin_helper.hpp"
@@ -12,6 +15,19 @@ namespace mmdeploy {
 #else
 #define TRT_NOEXCEPT
 #endif
+
+inline bool convert_dims_to_int(const nvinfer1::Dims &dims, int *output) TRT_NOEXCEPT {
+  if (dims.nbDims < 0 || dims.nbDims > nvinfer1::Dims::MAX_DIMS) {
+    return false;
+  }
+  for (int i = 0; i < dims.nbDims; ++i) {
+    if (dims.d[i] < 0 || dims.d[i] > std::numeric_limits<int>::max()) {
+      return false;
+    }
+    output[i] = static_cast<int>(dims.d[i]);
+  }
+  return true;
+}
 
 class TRTPluginBase : public nvinfer1::IPluginV2DynamicExt {
  public:

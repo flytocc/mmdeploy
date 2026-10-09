@@ -75,6 +75,14 @@ int TRTGridSampler::enqueue(const nvinfer1::PluginTensorDesc *inputDesc,
   nvinfer1::Dims input_dims = inputDesc[0].dims;
   nvinfer1::Dims grid_dims = inputDesc[1].dims;
   nvinfer1::Dims output_dims = outputDesc[0].dims;
+  int input_dims_data[nvinfer1::Dims::MAX_DIMS]{};
+  int grid_dims_data[nvinfer1::Dims::MAX_DIMS]{};
+  int output_dims_data[nvinfer1::Dims::MAX_DIMS]{};
+  if (!convert_dims_to_int(input_dims, input_dims_data) ||
+      !convert_dims_to_int(grid_dims, grid_dims_data) ||
+      !convert_dims_to_int(output_dims, output_dims_data)) {
+    return 1;
+  }
 
   GridSamplerInterpolation interp_mode = GridSamplerInterpolation::Bilinear;
   switch (mMode) {
@@ -110,7 +118,7 @@ int TRTGridSampler::enqueue(const nvinfer1::PluginTensorDesc *inputDesc,
   switch (data_type) {
     case nvinfer1::DataType::kFLOAT:
       grid_sample<float>((float *)outputs[0], (float *)inputs[0], (float *)inputs[1],
-                         &(output_dims.d[0]), &(input_dims.d[0]), &(grid_dims.d[0]),
+                         output_dims_data, input_dims_data, grid_dims_data,
                          input_dims.nbDims, interp_mode, padding_mode, mAlignCorners, stream);
       break;
     default:

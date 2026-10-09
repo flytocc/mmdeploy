@@ -80,10 +80,14 @@ size_t TRTScatterND::getWorkspaceSize(const nvinfer1::PluginTensorDesc *inputs, 
 int TRTScatterND::enqueue(const nvinfer1::PluginTensorDesc *inputDesc,
                           const nvinfer1::PluginTensorDesc *outputDesc, const void *const *inputs,
                           void *const *outputs, void *workSpace, cudaStream_t stream) TRT_NOEXCEPT {
-  const int *dims = &(inputDesc[0].dims.d[0]);
-  const int *indices_dims = &(inputDesc[1].dims.d[0]);
   int nbDims = inputDesc[0].dims.nbDims;
   int indice_nbDims = inputDesc[1].dims.nbDims;
+  int dims[nvinfer1::Dims::MAX_DIMS]{};
+  int indices_dims[nvinfer1::Dims::MAX_DIMS]{};
+  if (!convert_dims_to_int(inputDesc[0].dims, dims) ||
+      !convert_dims_to_int(inputDesc[1].dims, indices_dims)) {
+    return 1;
+  }
 
   const void *data = inputs[0];
   const void *indices = inputs[1];
