@@ -58,8 +58,8 @@ class OpModel(torch.nn.Module):
         return self._func(x, *self._arg_tuple)
 
 
-def get_model_onnx_nodes(model, x, onnx_file=onnx_file):
-    torch.onnx.export(model, x, onnx_file, opset_version=11)
+def get_model_onnx_nodes(model, x, onnx_file=onnx_file, opset=11):
+    torch.onnx.export(model, x, onnx_file, opset_version=opset, dynamo=False)
     onnx_model = onnx.load(onnx_file)
     nodes = onnx_model.graph.node
     return nodes
@@ -99,6 +99,87 @@ def test_grid_sampler():
     nodes = get_model_onnx_nodes(model, x)
     assert nodes[1].op_type == 'grid_sampler'
     assert nodes[1].domain == 'mmdeploy'
+
+
+@pytest.mark.parametrize(
+    ('trt_version', 'opset', 'rank', 'interpolation_mode', 'padding_mode',
+     'op_type', 'domain'), [
+         ('8.6.1', 16, 4, 0, 0, 'GridSample', ''),
+         ('8.5.3', 16, 4, 0, 0, 'GridSample', ''),
+         ('10.16.1.11', 16, 4, 0, 0, 'GridSample', ''),
+         ('8.4.3', 16, 4, 0, 0, 'grid_sampler', 'mmdeploy'),
+         ('10.16.1.11', 11, 4, 0, 0, 'grid_sampler', 'mmdeploy'),
+         ('10.16.1.11', 16, 5, 0, 0, 'grid_sampler', 'mmdeploy'),
+])
+def test_grid_sampler_tensorrt_version_dispatch(monkeypatch, trt_version,
+                                               opset, rank, interpolation_mode,
+                                               padding_mode, op_type, domain):
+    import mmdeploy.pytorch.symbolics.grid_sampler as grid_sampler_symbolics
+
+    monkeypatch.setattr(grid_sampler_symbolics, 'get_backend_version',
+                        lambda: {'tensorrt': trt_version})
+    context = RewriterContext(
+        Config({
+            'backend_config': {
+                'type': 'tensorrt'
+            },
+            'ir_config': {
+                'opset_version': opset
+            }
+        }), 'tensorrt', opset=opset)
+    input_shape = (1, 1, 2, 2, 2) if rank == 5 else (1, 1, 2, 2)
+    grid_shape = (1, 2, 2, 2, 3) if rank == 5 else (1, 2, 2, 2)
+    x = torch.rand(input_shape)
+    flow = torch.zeros(grid_shape)
+    model = OpModel(torch.grid_sampler, flow, interpolation_mode, padding_mode,
+                    False).eval()
+    with context:
+        nodes = get_model_onnx_nodes(model, x, opset=opset)
+    assert nodes[1].op_type == op_type
+    assert nodes[1].domain == domain
+
+
+@pytest.mark.parametrize('interpolation_mode,mode', [
+    (0, 'bilinear'),
+    (1, 'nearest'),
+    (2, 'bicubic'),
+])
+@pytest.mark.parametrize('padding_mode,padding_mode_name', [
+    (0, 'zeros'),
+    (1, 'border'),
+    (2, 'reflection'),
+])
+def test_grid_sampler_tensorrt_native_attributes(monkeypatch,
+                                                 interpolation_mode, mode,
+                                                 padding_mode,
+                                                 padding_mode_name):
+    import mmdeploy.pytorch.symbolics.grid_sampler as grid_sampler_symbolics
+
+    monkeypatch.setattr(grid_sampler_symbolics, 'get_backend_version',
+                        lambda: {'tensorrt': '10.16.1.11'})
+    context = RewriterContext(
+        Config({
+            'backend_config': {
+                'type': 'tensorrt'
+            },
+            'ir_config': {
+                'opset_version': 16
+            }
+        }), 'tensorrt', opset=16)
+    x = torch.rand(1, 1, 2, 2)
+    flow = torch.zeros(1, 2, 2, 2)
+    model = OpModel(torch.grid_sampler, flow, interpolation_mode, padding_mode,
+                    True).eval()
+    with context:
+        nodes = get_model_onnx_nodes(model, x, opset=16)
+
+    assert nodes[1].op_type == 'GridSample'
+    assert nodes[1].domain == ''
+    attributes = {attribute.name: onnx.helper.get_attribute_value(attribute)
+                  for attribute in nodes[1].attribute}
+    assert attributes['mode'].decode() == mode
+    assert attributes['padding_mode'].decode() == padding_mode_name
+    assert attributes['align_corners'] == 1
 
 
 @pytest.mark.usefixtures('prepare_symbolics')

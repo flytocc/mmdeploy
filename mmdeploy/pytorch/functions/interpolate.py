@@ -1,11 +1,45 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import math
+from numbers import Real
 from typing import Optional, Tuple, Union
 
 import torch
+from packaging.version import InvalidVersion, Version
 from torch.autograd import Function
 
 from mmdeploy.core import FUNCTION_REWRITER
-from mmdeploy.utils import Backend, get_root_logger
+from mmdeploy.utils import (Backend, get_backend_version, get_ir_config,
+                            get_root_logger)
+
+
+def _is_tensorrt_bicubic_supported(ctx, input, size, scale_factor,
+                                 align_corners):
+    """Select the subset shared by native Resize and the legacy plugin.
+
+    The plugin truncates scale factors when constructing output dimensions.
+    It also computes align-corners ratios jointly for both spatial axes, so
+    singleton outputs are excluded without specializing dynamic input shapes.
+    """
+    if (get_ir_config(ctx.cfg).get('opset_version', 11) < 11
+            or input.dim() != 4 or input.dtype != torch.float32
+            or size is not None):
+        return False
+    scales = ((scale_factor, scale_factor)
+              if isinstance(scale_factor, Real) else scale_factor)
+    if not isinstance(scales, (tuple, list)) or len(scales) != 2:
+        return False
+    minimum = 2 if align_corners else 1
+    if not all(isinstance(s, Real) and math.isfinite(s)
+               and s >= minimum and s == int(s)
+               for s in scales):
+        return False
+    trt_version = get_backend_version().get('tensorrt')
+    if trt_version is None:
+        return False
+    try:
+        return Version(trt_version) >= Version('8.5.0')
+    except InvalidVersion:
+        return False
 
 
 @FUNCTION_REWRITER.register_rewriter(
@@ -87,6 +121,16 @@ def interpolate__tensorrt(
 ):
     """Register default symbolic function for `interpolate`."""
     ctx = FUNCTION_REWRITER.get_context()
+
+    if mode == 'bicubic' and _is_tensorrt_bicubic_supported(
+            ctx, input, size, scale_factor, align_corners):
+        return ctx.origin_func(
+            input,
+            size=size,
+            scale_factor=scale_factor,
+            mode=mode,
+            align_corners=align_corners,
+            recompute_scale_factor=recompute_scale_factor)
 
     class BicubicInterpolate(Function):
 
