@@ -14,6 +14,27 @@ from mmdeploy.utils.config_utils import get_backend_config
 from mmdeploy.utils.constants import SDK_TASK_MAP as task_map
 
 
+def _get_model_batch_size(deploy_cfg: mmengine.Config) -> int:
+    """Get the TensorRT profile's batch limit for SDK batch assembly."""
+    if get_backend(deploy_cfg) != Backend.TENSORRT:
+        return 1
+    model_inputs = get_backend_config(deploy_cfg).get('model_inputs', [])
+    if not model_inputs:
+        return 1
+
+    input_shapes = model_inputs[0].get('input_shapes', {})
+    shapes = (input_shapes.values()
+              if isinstance(input_shapes, dict) else input_shapes)
+
+    batch_sizes = []
+    for shape in shapes:
+        if isinstance(shape, dict):
+            max_shape = shape.get('max_shape', [])
+            if max_shape:
+                batch_sizes.append(max_shape[0])
+    return min((int(size) for size in batch_sizes), default=1)
+
+
 def get_mmdeploy_version() -> str:
     """Return the version of MMDeploy."""
     import mmdeploy
@@ -133,6 +154,7 @@ def get_models(deploy_cfg: Union[str, mmengine.Config],
                 f.write(bytecode_path + '\n')
 
     precision = get_precision(deploy_cfg)
+    batch_size = _get_model_batch_size(deploy_cfg)
     dynamic_shape = is_dynamic_batch(deploy_cfg, input_name='input')
     return [
         dict(
@@ -141,7 +163,7 @@ def get_models(deploy_cfg: Union[str, mmengine.Config],
             weights=weights,
             backend=backend,
             precision=precision,
-            batch_size=1,
+            batch_size=batch_size,
             dynamic_shape=dynamic_shape)
     ]
 
@@ -175,7 +197,9 @@ def get_inference_info(deploy_cfg: mmengine.Config, model_cfg: mmengine.Config,
         input_name = input_names[0] if input_names else 'input'
         input_map = dict(img=input_name)
         output_map = {}
-    is_batched = is_dynamic_batch(deploy_cfg, input_name=input_map['img'])
+    batch_size = _get_model_batch_size(deploy_cfg)
+    is_batched = batch_size > 1 or is_dynamic_batch(
+        deploy_cfg, input_name=input_map['img'])
     return_dict = dict(
         name=name,
         type='Task',

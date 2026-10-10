@@ -97,6 +97,10 @@ static Result<DataType> MapDataType(nvinfer1::DataType dtype) {
       return DataType::kINT8;
     case nvinfer1::DataType::kINT32:
       return DataType::kINT32;
+#if NV_TENSORRT_MAJOR >= 10
+    case nvinfer1::DataType::kINT64:
+      return DataType::kINT64;
+#endif
     default:
       return Status(eNotSupported);
   }
