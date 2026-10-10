@@ -303,9 +303,10 @@ def build_pose_detection_model(
         if dp_type == 'mmdet.DetDataPreprocessor':
             from mmdet.models.data_preprocessors import DetDataPreprocessor
             data_preprocessor = DetDataPreprocessor(**dp)
-        else:
-            assert dp_type == 'PoseDataPreprocessor'
+        elif dp_type == 'PoseDataPreprocessor':
             data_preprocessor = PoseDataPreprocessor(**dp)
+        else:
+            assert dp_type is PoseDataPreprocessor
 
     backend_pose_model = __BACKEND_MODEL.build(
         dict(
