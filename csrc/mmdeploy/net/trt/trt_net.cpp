@@ -131,17 +131,33 @@ Result<void> TRTNet::Init(const Value& args) {
   TRT_TRY(engine_->getNbOptimizationProfiles() == 1, "only 1 optimization profile supported",
           Status(eNotSupported));
 
+#if NV_TENSORRT_MAJOR >= 10
+  auto n_bindings = engine_->getNbIOTensors();
+#else
   auto n_bindings = engine_->getNbBindings();
+#endif
   for (int i = 0; i < n_bindings; ++i) {
+#if NV_TENSORRT_MAJOR >= 10
+    auto binding_name = engine_->getIOTensorName(i);
+    auto dims = engine_->getTensorShape(binding_name);
+    if (engine_->isShapeInferenceIO(binding_name)) {
+#else
     auto binding_name = engine_->getBindingName(i);
     auto dims = engine_->getBindingDimensions(i);
     if (engine_->isShapeBinding(i)) {
+#endif
       MMDEPLOY_ERROR("shape binding is not supported.");
       return Status(eNotSupported);
     }
+#if NV_TENSORRT_MAJOR >= 10
+    auto is_input = engine_->getTensorIOMode(binding_name) == nvinfer1::TensorIOMode::kINPUT;
+    OUTCOME_TRY(auto dtype, MapDataType(engine_->getTensorDataType(binding_name)));
+#else
+    auto is_input = engine_->bindingIsInput(i);
     OUTCOME_TRY(auto dtype, MapDataType(engine_->getBindingDataType(i)));
+#endif
     TensorDesc desc{device_, dtype, to_shape(dims), binding_name};
-    if (engine_->bindingIsInput(i)) {
+    if (is_input) {
       MMDEPLOY_DEBUG("input binding {} {} {}", i, binding_name, to_string(dims));
       input_ids_.push_back(i);
       input_names_.emplace_back(binding_name);
@@ -173,15 +189,27 @@ Result<void> TRTNet::Reshape(Span<TensorShape> input_shapes) {
   for (int i = 0; i < input_tensors_.size(); ++i) {
     auto dims = to_dims(input_shapes[i]);
     MMDEPLOY_DEBUG("input shape: {}", to_string(dims));
+#if NV_TENSORRT_MAJOR >= 10
+    TRT_TRY(context_->setInputShape(input_names_[i].c_str(), dims), "failed to set input shape");
+#else
     TRT_TRY(context_->setBindingDimensions(input_ids_[i], dims));
+#endif
     input_tensors_[i].Reshape(input_shapes[i]);
   }
+#if NV_TENSORRT_MAJOR >= 10
+  TRT_TRY(context_->inferShapes(0, nullptr) == 0, "not all input dimensions specified");
+#else
   if (!context_->allInputDimensionsSpecified()) {
     MMDEPLOY_ERROR("not all input dimensions specified");
     return Status(eFail);
   }
+#endif
   for (int i = 0; i < output_tensors_.size(); ++i) {
+#if NV_TENSORRT_MAJOR >= 10
+    auto dims = context_->getTensorShape(output_names_[i].c_str());
+#else
     auto dims = context_->getBindingDimensions(output_ids_[i]);
+#endif
     MMDEPLOY_DEBUG("output shape: {}", to_string(dims));
     output_tensors_[i].Reshape(to_shape(dims));
   }
@@ -195,6 +223,19 @@ Result<Span<Tensor>> TRTNet::GetOutputTensors() { return output_tensors_; }
 Result<void> TRTNet::Forward() {
   CudaDeviceGuard guard(device_);
   using namespace trt_detail;
+#if NV_TENSORRT_MAJOR >= 10
+  auto event = GetNative<cudaEvent_t>(event_);
+  TRT_TRY(context_->setInputConsumedEvent(event), "failed to set input consumed event");
+  for (int i = 0; i < input_tensors_.size(); ++i) {
+    TRT_TRY(context_->setTensorAddress(input_names_[i].c_str(), input_tensors_[i].data()),
+            "failed to set input tensor address");
+  }
+  for (int i = 0; i < output_tensors_.size(); ++i) {
+    TRT_TRY(context_->setTensorAddress(output_names_[i].c_str(), output_tensors_[i].data()),
+            "failed to set output tensor address");
+  }
+  auto status = context_->enqueueV3(GetNative<cudaStream_t>(stream_));
+#else
   std::vector<void*> bindings(engine_->getNbBindings());
 
   for (int i = 0; i < input_tensors_.size(); ++i) {
@@ -206,6 +247,7 @@ Result<void> TRTNet::Forward() {
 
   auto event = GetNative<cudaEvent_t>(event_);
   auto status = context_->enqueueV2(bindings.data(), GetNative<cudaStream_t>(stream_), &event);
+#endif
   TRT_TRY(status, "TRT forward failed", Status(eFail));
   OUTCOME_TRY(event_.Wait());
 

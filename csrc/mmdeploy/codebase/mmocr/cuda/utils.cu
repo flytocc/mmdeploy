@@ -2,6 +2,7 @@
 
 #include "mmdeploy/codebase/mmocr/cuda/utils.h"
 #include "thrust/iterator/counting_iterator.h"
+#include "thrust/system/cuda/execution_policy.h"
 #include "thrust/transform.h"
 
 namespace mmdeploy {
