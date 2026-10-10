@@ -162,8 +162,10 @@ def _mask_predict_by_feat_single(self, mask_feat, kernels, priors):
     num_inst = priors.shape[1]
     batch_size = priors.shape[0]
     hw = mask_feat.size()[-2:]
+    # single_level_grid_priors default device is cuda,
+    # for non-cuda cases, you need to specify the device to avoid errors
     coord = self.prior_generator.single_level_grid_priors(
-        hw, level_idx=0).to(mask_feat.device)
+        hw, level_idx=0, device=mask_feat.device)
     coord = coord.unsqueeze(0).unsqueeze(0).repeat(batch_size, 1, 1, 1)
     priors = priors.unsqueeze(2)
     points = priors[..., :2]
